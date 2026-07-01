@@ -16,6 +16,26 @@ export default function StudentForm() {
   const [uploadProgress, setUploadProgress] = useState<{ [key: string]: string }>({});
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
+  // Specializations Map based on Programme Name
+  const specializationsMap: { [key: string]: string[] } = {
+    "Bachelor in Computer Applications": [
+      "Software Development",
+      "Cloud & Cybersecurity",
+      "Full Stack Development"
+    ],
+    "Bachelor in Technology in Computer Science and Engineer": [
+      "Artificial Intelligence & Machine Learning",
+      "Cloud Computing & Cybersecurity"
+    ],
+    "Diploma in Computer Science and Engineering": [
+      "General Computer Science and Engineering"
+    ],
+    "Master in Computer Applications": [
+      "Cybersecurity",
+      "Data Analytic"
+    ]
+  };
+
   // Form Fields State
   const [formData, setFormData] = useState<Omit<StudentData, "dobProofUrl">>({
     studentName: "",
@@ -24,15 +44,15 @@ export default function StudentForm() {
     enrollmentNo: "",
     yearOfAdmission: new Date().getFullYear().toString(),
     dob: "",
-    programmeName: "",
-    programmeCode: "",
-    specialization: "",
-    careerType: "",
+    programmeName: "Bachelor in Computer Applications",
+    programmeCode: "BTECH-001",
+    specialization: "Software Development",
+    careerType: "UG",
     programmeDuration: "3",
     currentYear: "I",
     lateralEntry: "No",
-    department: "",
-    school: "",
+    department: "Computer Science and Engineering",
+    school: "Computer Science and Engineering",
     differentlyAbled: "No",
     socialCategory: "General",
     religion: "",
@@ -47,6 +67,9 @@ export default function StudentForm() {
     scholarshipPartialName: "",
     scholarshipPartialAmount: 0,
     finalYearStatus: "Course Ongoing",
+    fatherQualification: "",
+    motherQualification: "",
+    firstGraduation: "No",
     submittedAt: "",
   });
 
@@ -83,10 +106,34 @@ export default function StudentForm() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: name.includes("Amount") || name === "householdIncome" ? Number(value) : value,
-    }));
+    setFormData((prev) => {
+      const next = {
+        ...prev,
+        [name]: name.includes("Amount") || name === "householdIncome" ? Number(value) : value,
+      };
+
+      if (name === "programmeName") {
+        const specs = specializationsMap[value];
+        next.specialization = specs && specs.length > 0 ? specs[0] : "";
+
+        // Automatically set matching careers and durations for convenience
+        if (value === "Master in Computer Applications") {
+          next.careerType = "PG";
+          next.programmeDuration = "2";
+        } else if (value === "Bachelor in Technology in Computer Science and Engineer") {
+          next.careerType = "UG";
+          next.programmeDuration = "4";
+        } else if (value === "Bachelor in Computer Applications") {
+          next.careerType = "UG";
+          next.programmeDuration = "3";
+        } else if (value === "Diploma in Computer Science and Engineering") {
+          next.careerType = "Diploma";
+          next.programmeDuration = "3";
+        }
+      }
+
+      return next;
+    });
     
     // Clear error
     if (errors[name]) {
@@ -148,6 +195,9 @@ export default function StudentForm() {
       if (!formData.state.trim()) stepErrors.state = "State is required";
       if (!formData.country.trim()) stepErrors.country = "Country is required";
       if (formData.householdIncome < 0) stepErrors.householdIncome = "Income cannot be negative";
+      if (!formData.fatherQualification.trim()) stepErrors.fatherQualification = "Father's Qualification is required";
+      if (!formData.motherQualification.trim()) stepErrors.motherQualification = "Mother's Qualification is required";
+      if (!formData.firstGraduation) stepErrors.firstGraduation = "First Graduation status is required";
     }
 
     if (step === 4) {
@@ -240,8 +290,20 @@ export default function StudentForm() {
       // 2. Prepare student data payload
       setUploadProgress({ status: "Saving student record to database..." });
       
+      // Convert all text details entered by user to uppercase before saving
+      const uppercaseFormData = { ...formData };
+      Object.keys(uppercaseFormData).forEach((key) => {
+        const val = (uppercaseFormData as any)[key];
+        if (typeof val === "string") {
+          // Keep dates, system timestamps, and IDs untouched
+          if (key !== "submittedAt" && key !== "dob") {
+            (uppercaseFormData as any)[key] = val.toUpperCase();
+          }
+        }
+      });
+
       const finalStudentData: StudentData = {
-        ...formData,
+        ...uppercaseFormData,
         dobProofUrl: dobRes.url,
         dobProofName: dobRes.name,
         categoryCertUrl: categoryRes.url || undefined,
@@ -416,15 +478,15 @@ export default function StudentForm() {
                     enrollmentNo: "",
                     yearOfAdmission: new Date().getFullYear().toString(),
                     dob: "",
-                    programmeName: "",
-                    programmeCode: "",
-                    specialization: "",
-                    careerType: "",
+                    programmeName: "Bachelor in Computer Applications",
+                    programmeCode: "BTECH-001",
+                    specialization: "Software Development",
+                    careerType: "UG",
                     programmeDuration: "3",
                     currentYear: "I",
                     lateralEntry: "No",
-                    department: "",
-                    school: "",
+                    department: "Computer Science and Engineering",
+                    school: "Computer Science and Engineering",
                     differentlyAbled: "No",
                     socialCategory: "General",
                     religion: "",
@@ -439,6 +501,9 @@ export default function StudentForm() {
                     scholarshipPartialName: "",
                     scholarshipPartialAmount: 0,
                     finalYearStatus: "Course Ongoing",
+                    fatherQualification: "",
+                    motherQualification: "",
+                    firstGraduation: "No",
                     submittedAt: "",
                   });
                 }}
@@ -604,14 +669,17 @@ export default function StudentForm() {
                   {/* Programme Name */}
                   <div>
                     <label className="block text-slate-700 text-sm font-semibold mb-1.5">Programme Name *</label>
-                    <input
-                      type="text"
+                    <select
                       name="programmeName"
                       value={formData.programmeName}
                       onChange={handleChange}
-                      placeholder="e.g. Bachelor of Technology"
                       className={`w-full bg-slate-50 border ${errors.programmeName ? 'border-red-300 focus:border-red-500 focus:ring-red-100' : 'border-slate-200 focus:border-indigo-500 focus:ring-indigo-100'} px-4 py-2 rounded-xl text-slate-800 text-sm focus:outline-none focus:ring-4 transition`}
-                    />
+                    >
+                      <option value="Bachelor in Computer Applications">Bachelor in Computer Applications</option>
+                      <option value="Bachelor in Technology in Computer Science and Engineer">Bachelor in Technology in Computer Science and Engineer</option>
+                      <option value="Diploma in Computer Science and Engineering">Diploma in Computer Science and Engineering</option>
+                      <option value="Master in Computer Applications">Master in Computer Applications</option>
+                    </select>
                     {errors.programmeName && <span className="text-red-500 text-xs mt-1 block">{errors.programmeName}</span>}
                   </div>
 
@@ -623,7 +691,7 @@ export default function StudentForm() {
                       name="programmeCode"
                       value={formData.programmeCode}
                       onChange={handleChange}
-                      placeholder="e.g. BTECH-CSE"
+                      placeholder="e.g. BTECH-001"
                       className={`w-full bg-slate-50 border ${errors.programmeCode ? 'border-red-300 focus:border-red-500 focus:ring-red-100' : 'border-slate-200 focus:border-indigo-500 focus:ring-indigo-100'} px-4 py-2 rounded-xl text-slate-800 text-sm focus:outline-none focus:ring-4 transition`}
                     />
                     {errors.programmeCode && <span className="text-red-500 text-xs mt-1 block">{errors.programmeCode}</span>}
@@ -632,14 +700,16 @@ export default function StudentForm() {
                   {/* Specialization */}
                   <div>
                     <label className="block text-slate-700 text-sm font-semibold mb-1.5">Specialization *</label>
-                    <input
-                      type="text"
+                    <select
                       name="specialization"
                       value={formData.specialization}
                       onChange={handleChange}
-                      placeholder="e.g. Artificial Intelligence"
                       className={`w-full bg-slate-50 border ${errors.specialization ? 'border-red-300 focus:border-red-500 focus:ring-red-100' : 'border-slate-200 focus:border-indigo-500 focus:ring-indigo-100'} px-4 py-2 rounded-xl text-slate-800 text-sm focus:outline-none focus:ring-4 transition`}
-                    />
+                    >
+                      {specializationsMap[formData.programmeName]?.map((spec) => (
+                        <option key={spec} value={spec}>{spec}</option>
+                      )) || <option value="">Select Specialization</option>}
+                    </select>
                     {errors.specialization && <span className="text-red-500 text-xs mt-1 block">{errors.specialization}</span>}
                   </div>
 
@@ -729,14 +799,14 @@ export default function StudentForm() {
                   {/* Department */}
                   <div>
                     <label className="block text-slate-700 text-sm font-semibold mb-1.5">Department *</label>
-                    <input
-                      type="text"
+                    <select
                       name="department"
                       value={formData.department}
                       onChange={handleChange}
-                      placeholder="e.g. Computer Science & Engineering"
                       className={`w-full bg-slate-50 border ${errors.department ? 'border-red-300 focus:border-red-500 focus:ring-red-100' : 'border-slate-200 focus:border-indigo-500 focus:ring-indigo-100'} px-4 py-2 rounded-xl text-slate-800 text-sm focus:outline-none focus:ring-4 transition`}
-                    />
+                    >
+                      <option value="Computer Science and Engineering">Computer Science and Engineering</option>
+                    </select>
                     {errors.department && <span className="text-red-500 text-xs mt-1 block">{errors.department}</span>}
                   </div>
                 </div>
@@ -744,14 +814,14 @@ export default function StudentForm() {
                 {/* School */}
                 <div>
                   <label className="block text-slate-700 text-sm font-semibold mb-1.5">School / Faculty Name *</label>
-                  <input
-                    type="text"
+                  <select
                     name="school"
                     value={formData.school}
                     onChange={handleChange}
-                    placeholder="e.g. School of Engineering & Technology"
                     className={`w-full bg-slate-50 border ${errors.school ? 'border-red-300 focus:border-red-500 focus:ring-red-100' : 'border-slate-200 focus:border-indigo-500 focus:ring-indigo-100'} px-4 py-2 rounded-xl text-slate-800 text-sm focus:outline-none focus:ring-4 transition`}
-                  />
+                  >
+                    <option value="Computer Science and Engineering">Computer Science and Engineering</option>
+                  </select>
                   {errors.school && <span className="text-red-500 text-xs mt-1 block">{errors.school}</span>}
                 </div>
               </div>
@@ -908,6 +978,50 @@ export default function StudentForm() {
                       <option value="Pass">Pass</option>
                       <option value="Fail">Fail</option>
                     </select>
+                  </div>
+
+                  {/* Father's Qualification */}
+                  <div>
+                    <label className="block text-slate-700 text-sm font-semibold mb-1.5">Father's Qualification *</label>
+                    <input
+                      type="text"
+                      name="fatherQualification"
+                      value={formData.fatherQualification}
+                      onChange={handleChange}
+                      placeholder="e.g. Graduate, Post Graduate"
+                      className={`w-full bg-slate-50 border ${errors.fatherQualification ? 'border-red-300 focus:border-red-500 focus:ring-red-100' : 'border-slate-200 focus:border-indigo-500 focus:ring-indigo-100'} px-4 py-2 rounded-xl text-slate-800 text-sm focus:outline-none focus:ring-4 transition`}
+                    />
+                    {errors.fatherQualification && <span className="text-red-500 text-xs mt-1 block">{errors.fatherQualification}</span>}
+                  </div>
+
+                  {/* Mother's Qualification */}
+                  <div>
+                    <label className="block text-slate-700 text-sm font-semibold mb-1.5">Mother's Qualification *</label>
+                    <input
+                      type="text"
+                      name="motherQualification"
+                      value={formData.motherQualification}
+                      onChange={handleChange}
+                      placeholder="e.g. Graduate, Post Graduate"
+                      className={`w-full bg-slate-50 border ${errors.motherQualification ? 'border-red-300 focus:border-red-500 focus:ring-red-100' : 'border-slate-200 focus:border-indigo-500 focus:ring-indigo-100'} px-4 py-2 rounded-xl text-slate-800 text-sm focus:outline-none focus:ring-4 transition`}
+                    />
+                    {errors.motherQualification && <span className="text-red-500 text-xs mt-1 block">{errors.motherQualification}</span>}
+                  </div>
+
+                  {/* First Graduation */}
+                  <div>
+                    <label className="block text-slate-700 text-sm font-semibold mb-1.5">First Graduation Status (Self/Siblings) *</label>
+                    <select
+                      name="firstGraduation"
+                      value={formData.firstGraduation}
+                      onChange={handleChange}
+                      className={`w-full bg-slate-50 border ${errors.firstGraduation ? 'border-red-300 focus:border-red-500 focus:ring-red-100' : 'border-slate-200 focus:border-indigo-500 focus:ring-indigo-100'} px-4 py-2 rounded-xl text-slate-800 text-sm focus:outline-none focus:ring-4 transition`}
+                    >
+                      <option value="No">No</option>
+                      <option value="Yes - Self">Yes - Self (First Graduate in Family)</option>
+                      <option value="Yes - Sibling">Yes - Sibling (Sibling is First Graduate)</option>
+                    </select>
+                    {errors.firstGraduation && <span className="text-red-500 text-xs mt-1 block">{errors.firstGraduation}</span>}
                   </div>
                 </div>
               </div>
@@ -1186,6 +1300,18 @@ export default function StudentForm() {
                     <div className="flex justify-between py-1 border-b border-slate-200/40">
                       <span className="text-slate-400 font-semibold text-xs">Household Income:</span>
                       <span className="text-slate-800 font-medium">Rs. {Number(formData.householdIncome).toLocaleString("en-IN")}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-200/40">
+                      <span className="text-slate-400 font-semibold text-xs">Father's Qualification:</span>
+                      <span className="text-slate-800 font-medium">{formData.fatherQualification}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-200/40">
+                      <span className="text-slate-400 font-semibold text-xs">Mother's Qualification:</span>
+                      <span className="text-slate-800 font-medium">{formData.motherQualification}</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-200/40">
+                      <span className="text-slate-400 font-semibold text-xs">First Graduation Status:</span>
+                      <span className="text-slate-800 font-medium">{formData.firstGraduation}</span>
                     </div>
                   </div>
 

@@ -66,7 +66,7 @@ export const generateStudentPDF = (student: StudentData) => {
     doc.setTextColor(0, 0, 0);
     doc.text(val2 || "N/A", marginX + 133, currentY);
 
-    currentY += 7;
+    currentY += 6;
   };
 
   // Helper: Draw Full Width Row
@@ -88,7 +88,7 @@ export const generateStudentPDF = (student: StudentData) => {
     doc.setTextColor(0, 0, 0);
     doc.text(val || "N/A", marginX + 43, currentY);
 
-    currentY += 7;
+    currentY += 6;
   };
 
   // Header Logo Box / Placeholder
@@ -115,7 +115,7 @@ export const generateStudentPDF = (student: StudentData) => {
   drawTwoColumnRow("Student Name", student.studentName, "Gender", student.gender);
   drawTwoColumnRow("Date of Birth", student.dob, "ABC ID", student.abcId);
   drawTwoColumnRow("Enrollment No.", student.enrollmentNo, "Year of Admission", student.yearOfAdmission);
-  currentY += 3;
+  currentY += 1;
 
   // --- SECTION 2: ACADEMIC DETAILS ---
   drawSectionHeader("2. Academic & Program Details");
@@ -124,7 +124,7 @@ export const generateStudentPDF = (student: StudentData) => {
   drawTwoColumnRow("Current Year", student.currentYear, "Duration (Years)", student.programmeDuration);
   drawTwoColumnRow("Lateral Entry", student.lateralEntry, "Department", student.department);
   drawFullWidthRow("School Name", student.school);
-  currentY += 3;
+  currentY += 1;
 
   // --- SECTION 3: DEMOGRAPHIC & SOCIAL DETAILS ---
   drawSectionHeader("3. Socio-Demographic Details");
@@ -132,7 +132,9 @@ export const generateStudentPDF = (student: StudentData) => {
   drawTwoColumnRow("Differently Abled", student.differentlyAbled, "EWS Status", student.ews);
   drawTwoColumnRow("Household Income", `Rs. ${Number(student.householdIncome).toLocaleString("en-IN")}`, "Final Year Status", student.finalYearStatus);
   drawTwoColumnRow("State of Origin", student.state, "Country", student.country);
-  currentY += 3;
+  drawTwoColumnRow("Father's Qualification", student.fatherQualification, "Mother's Qualification", student.motherQualification);
+  drawFullWidthRow("First Graduation (Self/Sib)", student.firstGraduation);
+  currentY += 1;
 
   // --- SECTION 4: SCHOLARSHIP DETAILS ---
   drawSectionHeader("4. Scholarship & Fee Reimbursements");
@@ -148,7 +150,7 @@ export const generateStudentPDF = (student: StudentData) => {
     "Scholarship Name / Amt",
     student.scholarshipPartialSource !== "None" ? `${student.scholarshipPartialName} (Rs. ${Number(student.scholarshipPartialAmount).toLocaleString("en-IN")})` : "N/A"
   );
-  currentY += 3;
+  currentY += 1;
 
   // --- SECTION 5: SUPPORTING DOCUMENTS ATTACHED ---
   drawSectionHeader("5. Submitted Supporting Documents");
@@ -175,7 +177,7 @@ export const generateStudentPDF = (student: StudentData) => {
     doc.text(docItem.file, marginX + 90, currentY);
     currentY += 6;
   });
-  currentY += 4;
+  currentY += 2;
 
   // --- SECTION 6: DECLARATION ---
   doc.setFont("helvetica", "bold");

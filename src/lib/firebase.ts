@@ -82,5 +82,8 @@ export interface StudentData {
   scholarshipPartialName: string;
   scholarshipPartialAmount: number;
   finalYearStatus: string;
+  fatherQualification: string;
+  motherQualification: string;
+  firstGraduation: string;
   submittedAt: string;
 }
