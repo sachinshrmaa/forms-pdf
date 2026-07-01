@@ -1,18 +1,23 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { db, useMock, StudentData } from "@/lib/firebase";
-import { collection, getDocs, query, orderBy } from "firebase/firestore";
+import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { type Session } from "@supabase/supabase-js";
+import { fetchStudents as loadStudentsFromSource, getMockDocument, supabase, useMock, StudentData } from "@/lib/supabase";
 import { generateStudentPDF } from "@/lib/pdfGenerator";
 import {
-  Search, Filter, Download, Eye, RefreshCw, Users, FileText, Award, MapPin, X, ArrowLeft, Database, Trash2, UserPlus, ExternalLink
+  Search, Download, Eye, RefreshCw, Users, FileText, Award, MapPin, X, ArrowLeft, Database, Trash2, UserPlus, ExternalLink, LogIn, LogOut, Shield, Loader2
 } from "lucide-react";
 
 export default function AdminDashboard() {
   const [students, setStudents] = useState<StudentData[]>([]);
-  const [filteredStudents, setFilteredStudents] = useState<StudentData[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedStudent, setSelectedStudent] = useState<StudentData | null>(null);
+  const [session, setSession] = useState<Session | null | undefined>(useMock || !supabase ? null : undefined);
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState("");
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState("");
@@ -21,26 +26,13 @@ export default function AdminDashboard() {
   const [careerFilter, setCareerFilter] = useState("");
   const [ewsFilter, setEwsFilter] = useState("");
 
-  const fetchStudents = async () => {
+  const authLoading = session === undefined;
+
+  const refreshStudents = async () => {
     setLoading(true);
     try {
-      if (useMock) {
-        // Load from LocalStorage
-        const existing = localStorage.getItem("mock_students");
-        const list = existing ? JSON.parse(existing) : [];
-        // Sort by date desc
-        list.sort((a: any, b: any) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
-        setStudents(list);
-      } else {
-        // Load from Firestore
-        const q = query(collection(db, "students"), orderBy("submittedAt", "desc"));
-        const querySnapshot = await getDocs(q);
-        const list: StudentData[] = [];
-        querySnapshot.forEach((doc) => {
-          list.push({ id: doc.id, ...doc.data() } as StudentData);
-        });
-        setStudents(list);
-      }
+      const list = await loadStudentsFromSource();
+      setStudents(list);
     } catch (error) {
       console.error("Error fetching students:", error);
     } finally {
@@ -49,11 +41,44 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    fetchStudents();
+    if (useMock || !supabase) {
+      return;
+    }
+
+    let active = true;
+
+    void supabase.auth.getSession().then(({ data }) => {
+      if (!active) return;
+
+      setSession(data.session);
+
+      if (data.session) {
+        void refreshStudents();
+      } else {
+        setLoading(false);
+      }
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!active) return;
+
+      setSession(nextSession);
+
+      if (nextSession) {
+        void refreshStudents();
+      } else {
+        setStudents([]);
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
-  // Apply search & filters
-  useEffect(() => {
+  const filteredStudents = useMemo(() => {
     let result = [...students];
 
     // Search query
@@ -88,7 +113,7 @@ export default function AdminDashboard() {
       result = result.filter((s) => s.ews === ewsFilter);
     }
 
-    setFilteredStudents(result);
+    return result;
   }, [students, searchQuery, genderFilter, categoryFilter, careerFilter, ewsFilter]);
 
   const handleClearFilters = () => {
@@ -97,6 +122,40 @@ export default function AdminDashboard() {
     setCategoryFilter("");
     setCareerFilter("");
     setEwsFilter("");
+  };
+
+  const handleAdminLogin = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!supabase) {
+      setAuthError("Supabase is not configured. Add your environment variables to enable admin sign-in.");
+      return;
+    }
+
+    setAuthSubmitting(true);
+    setAuthError("");
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email: authEmail.trim(),
+      password: authPassword,
+    });
+
+    if (error) {
+      setAuthError(error.message);
+    }
+
+    setAuthSubmitting(false);
+  };
+
+  const handleAdminLogout = async () => {
+    if (!supabase) {
+      return;
+    }
+
+    await supabase.auth.signOut();
+    setSession(null);
+    setStudents([]);
+    setLoading(false);
   };
 
   // Generate Mock Data for Testing
@@ -265,27 +324,34 @@ export default function AdminDashboard() {
     ];
 
     localStorage.setItem("mock_students", JSON.stringify(mockStudents));
-    fetchStudents();
+    void refreshStudents();
   };
 
   const handleClearMockData = () => {
     if (confirm("Are you sure you want to delete all local entries?")) {
       localStorage.removeItem("mock_students");
-      fetchStudents();
+      void refreshStudents();
     }
   };
 
   // Document Click handler
   const handleViewDocument = (url?: string, fileName?: string) => {
     if (!url) return;
-    if (url.startsWith("dob_") || url.startsWith("category_") || url.startsWith("disability_") || url.startsWith("ews_")) {
+    if (
+      url.startsWith("dob_") ||
+      url.startsWith("category_") ||
+      url.startsWith("disability_") ||
+      url.startsWith("ews_") ||
+      url.startsWith("scholarship_full_proof_") ||
+      url.startsWith("scholarship_partial_proof_")
+    ) {
       // Check in global memory cache
-      if (typeof window !== "undefined" && (window as any).__local_file_cache?.[url]) {
-        const cached = (window as any).__local_file_cache[url];
+      const cached = getMockDocument(url);
+      if (cached) {
         window.open(cached.url, "_blank");
       } else {
         alert(
-          `Document '${fileName || url}' was uploaded in a mock session. Because this app is running in Local Storage fallback mode, files uploaded in previous browser refreshes are not stored permanently. Register a new student or configure Firebase to view permanent links.`
+          `Document '${fileName || url}' was uploaded in a mock session. Because this app is running in Local Storage fallback mode, files uploaded in previous browser refreshes are not stored permanently. Register a new student or configure Supabase to view permanent links.`
         );
       }
     } else {
@@ -300,6 +366,89 @@ export default function AdminDashboard() {
   const reservedCount = students.filter((s) => s.socialCategory !== "General").length;
   const differentlyAbledCount = students.filter((s) => s.differentlyAbled === "Yes").length;
   const ewsCount = students.filter((s) => s.ews === "Yes").length;
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-4">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
+          <p className="text-sm text-slate-300">Loading admin session...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!useMock && !session) {
+    return (
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(30,41,59,0.96),_rgba(2,6,23,1))] text-white flex items-center justify-center px-4 py-10">
+        <div className="w-full max-w-md bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl shadow-2xl shadow-slate-950/40 p-8">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-3 rounded-2xl bg-indigo-500/15 text-indigo-300 border border-indigo-400/20">
+              <Shield className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.25em] text-slate-400 font-semibold">Admin Access</p>
+              <h1 className="text-2xl font-black tracking-tight">Sign in to continue</h1>
+            </div>
+          </div>
+
+          <p className="text-sm text-slate-300 mb-6 leading-relaxed">
+            Use a Supabase Auth email/password account to open the admin dashboard.
+          </p>
+
+          {authError && (
+            <div className="mb-4 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+              {authError}
+            </div>
+          )}
+
+          <form onSubmit={handleAdminLogin} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Email</label>
+              <input
+                type="email"
+                value={authEmail}
+                onChange={(event) => setAuthEmail(event.target.value)}
+                className="w-full rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-400"
+                placeholder="admin@example.com"
+                autoComplete="email"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Password</label>
+              <input
+                type="password"
+                value={authPassword}
+                onChange={(event) => setAuthPassword(event.target.value)}
+                className="w-full rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-400"
+                placeholder="Enter password"
+                autoComplete="current-password"
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={authSubmitting}
+              className="w-full rounded-2xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-60 disabled:cursor-not-allowed px-4 py-3 text-sm font-bold text-white transition flex items-center justify-center gap-2"
+            >
+              {authSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
+              Sign in
+            </button>
+          </form>
+
+          <div className="mt-6 flex items-center justify-between text-xs text-slate-400">
+            <Link href="/" className="hover:text-white transition">
+              Back to public form
+            </Link>
+            <span>Powered by Supabase Auth</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
@@ -318,16 +467,29 @@ export default function AdminDashboard() {
           </div>
 
           <div className="flex items-center gap-3">
-            <a
+            <Link
               href="/"
               className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-xl transition flex items-center gap-2 border border-slate-700"
             >
               <ArrowLeft className="w-4 h-4" />
               Public Form
-            </a>
+            </Link>
+
+            <div className="text-[10px] text-slate-400 hidden md:block">
+              {session?.user.email}
+            </div>
+
+            <button
+              onClick={() => void handleAdminLogout()}
+              className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-xl transition flex items-center gap-2 border border-slate-700"
+              title="Sign out"
+            >
+              <LogOut className="w-4 h-4" />
+              Sign out
+            </button>
             
             <button
-              onClick={fetchStudents}
+              onClick={() => void refreshStudents()}
               className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl transition border border-slate-700"
               title="Refresh database"
             >
@@ -517,7 +679,7 @@ export default function AdminDashboard() {
               <Users className="w-12 h-12 text-slate-200 mb-4" />
               <span className="font-bold text-slate-650 text-sm">No Student Records Found</span>
               <p className="text-xs text-slate-400 mt-1 max-w-sm">
-                Try searching with different terms, clearing your filters, or clicking "Seed Mock Records" if you are testing locally.
+                Try searching with different terms, clearing your filters, or clicking &quot;Seed Mock Records&quot; if you are testing locally.
               </p>
             </div>
           ) : (
@@ -649,8 +811,8 @@ export default function AdminDashboard() {
                     <p><strong className="text-slate-600 font-semibold block text-xs">Annual Income:</strong> Rs. {Number(selectedStudent.householdIncome).toLocaleString("en-IN")}</p>
                     <p><strong className="text-slate-600 font-semibold block text-xs">Differently Abled PwD:</strong> {selectedStudent.differentlyAbled}</p>
                     <p><strong className="text-slate-600 font-semibold block text-xs">Region:</strong> {selectedStudent.state}, {selectedStudent.country}</p>
-                    <p><strong className="text-slate-600 font-semibold block text-xs">Father's Qualification:</strong> {selectedStudent.fatherQualification}</p>
-                    <p><strong className="text-slate-600 font-semibold block text-xs">Mother's Qualification:</strong> {selectedStudent.motherQualification}</p>
+                    <p><strong className="text-slate-600 font-semibold block text-xs">Father&apos;s Qualification:</strong> {selectedStudent.fatherQualification}</p>
+                    <p><strong className="text-slate-600 font-semibold block text-xs">Mother&apos;s Qualification:</strong> {selectedStudent.motherQualification}</p>
                     <p><strong className="text-slate-600 font-semibold block text-xs">First Graduate Status:</strong> {selectedStudent.firstGraduation}</p>
                   </div>
                 </div>
@@ -667,6 +829,15 @@ export default function AdminDashboard() {
                       <>
                         <p><strong className="text-slate-600 font-semibold">Scholarship Name:</strong> {selectedStudent.scholarshipFullName}</p>
                         <p><strong className="text-slate-600 font-semibold">Annual Amount:</strong> Rs. {Number(selectedStudent.scholarshipFullAmount).toLocaleString("en-IN")}</p>
+                        {selectedStudent.scholarshipFullProofUrl && (
+                          <button
+                            onClick={() => handleViewDocument(selectedStudent.scholarshipFullProofUrl, selectedStudent.scholarshipFullProofName)}
+                            className="mt-2 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            View Proof
+                          </button>
+                        )}
                       </>
                     )}
                   </div>
@@ -677,6 +848,15 @@ export default function AdminDashboard() {
                       <>
                         <p><strong className="text-slate-600 font-semibold">Scholarship Name:</strong> {selectedStudent.scholarshipPartialName}</p>
                         <p><strong className="text-slate-600 font-semibold">Annual Amount:</strong> Rs. {Number(selectedStudent.scholarshipPartialAmount).toLocaleString("en-IN")}</p>
+                        {selectedStudent.scholarshipPartialProofUrl && (
+                          <button
+                            onClick={() => handleViewDocument(selectedStudent.scholarshipPartialProofUrl, selectedStudent.scholarshipPartialProofName)}
+                            className="mt-2 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            View Proof
+                          </button>
+                        )}
                       </>
                     )}
                   </div>

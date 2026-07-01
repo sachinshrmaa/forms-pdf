@@ -1,9 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { db, storage, useMock, StudentData } from "@/lib/firebase";
-import { collection, addDoc } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import React, { useState } from "react";
+import { createStudent, uploadStudentDocument, useMock, StudentData } from "@/lib/supabase";
 import { 
   User, BookOpen, MapPin, Award, CheckCircle, ArrowRight, ArrowLeft, Upload, Loader2, Info, Check, AlertCircle, Database
 } from "lucide-react";
@@ -79,11 +77,15 @@ export default function StudentForm() {
     categoryCert: File | null;
     disabilityCert: File | null;
     ewsCert: File | null;
+    scholarshipFullProof: File | null;
+    scholarshipPartialProof: File | null;
   }>({
     dobProof: null,
     categoryCert: null,
     disabilityCert: null,
     ewsCert: null,
+    scholarshipFullProof: null,
+    scholarshipPartialProof: null,
   });
 
   // Custom styling elements: step labels
@@ -94,15 +96,6 @@ export default function StudentForm() {
     { number: 4, label: "Scholarships & Files", icon: Award },
     { number: 5, label: "Review & Submit", icon: CheckCircle },
   ];
-
-  // Store uploaded documents locally in memory for session-level persistence in admin dashboard when firebase is missing
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      if (!window.hasOwnProperty("__local_file_cache")) {
-        (window as any).__local_file_cache = {};
-      }
-    }
-  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -216,10 +209,12 @@ export default function StudentForm() {
       if (formData.scholarshipFullSource !== "None") {
         if (!formData.scholarshipFullName.trim()) stepErrors.scholarshipFullName = "Scholarship name is required";
         if (formData.scholarshipFullAmount <= 0) stepErrors.scholarshipFullAmount = "Scholarship amount must be greater than 0";
+        if (!files.scholarshipFullProof) stepErrors.scholarshipFullProof = "Scholarship proof document is required";
       }
       if (formData.scholarshipPartialSource !== "None") {
         if (!formData.scholarshipPartialName.trim()) stepErrors.scholarshipPartialName = "Scholarship name is required";
         if (formData.scholarshipPartialAmount <= 0) stepErrors.scholarshipPartialAmount = "Scholarship amount must be greater than 0";
+        if (!files.scholarshipPartialProof) stepErrors.scholarshipPartialProof = "Scholarship proof document is required";
       }
     }
 
@@ -237,109 +232,109 @@ export default function StudentForm() {
     setCurrentStep((prev) => prev - 1);
   };
 
-  // Helper to upload a single file
-  const uploadSingleFile = async (file: File, folder: string, studentName: string): Promise<{ url: string; name: string }> => {
-    if (useMock) {
-      // Mock File Upload (returns Object URL and saves to browser global session map for verification)
-      const objectUrl = URL.createObjectURL(file);
-      const fileId = `${folder}_${Date.now()}`;
-      if (typeof window !== "undefined") {
-        (window as any).__local_file_cache[fileId] = {
-          url: objectUrl,
-          name: file.name,
-          file: file
-        };
-      }
-      return { url: fileId, name: file.name };
-    } else {
-      // Real Firebase Upload
-      const cleanName = studentName.replace(/\s+/g, "_").toLowerCase();
-      const storageRef = ref(storage, `students/${cleanName}/${folder}_${Date.now()}_${file.name}`);
-      const snapshot = await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(snapshot.ref);
-      return { url, name: file.name };
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateStep(5)) return;
 
     setIsSubmitting(true);
     try {
-      // 1. Upload files
-      setUploadProgress({ status: "Uploading supporting documents..." });
-      
-      const dobRes = await uploadSingleFile(files.dobProof!, "dob_proof", formData.studentName);
-      
-      let categoryRes = { url: "", name: "" };
-      if (files.categoryCert) {
-        categoryRes = await uploadSingleFile(files.categoryCert, "category_cert", formData.studentName);
-      }
-
-      let disabilityRes = { url: "", name: "" };
-      if (files.disabilityCert) {
-        disabilityRes = await uploadSingleFile(files.disabilityCert, "disability_cert", formData.studentName);
-      }
-
-      let ewsRes = { url: "", name: "" };
-      if (files.ewsCert) {
-        ewsRes = await uploadSingleFile(files.ewsCert, "ews_cert", formData.studentName);
-      }
-
-      // 2. Prepare student data payload
-      setUploadProgress({ status: "Saving student record to database..." });
-      
       // Convert all text details entered by user to uppercase before saving
-      const uppercaseFormData = { ...formData };
-      Object.keys(uppercaseFormData).forEach((key) => {
-        const val = (uppercaseFormData as any)[key];
-        if (typeof val === "string") {
-          // Keep dates, system timestamps, and IDs untouched
-          if (key !== "submittedAt" && key !== "dob") {
-            (uppercaseFormData as any)[key] = val.toUpperCase();
-          }
+      const uppercaseFormData = { ...formData } as Record<string, string | number>;
+      Object.entries(uppercaseFormData).forEach(([key, value]) => {
+        if (typeof value === "string" && key !== "submittedAt" && key !== "dob") {
+          uppercaseFormData[key] = value.toUpperCase();
         }
       });
 
       const finalStudentData: StudentData = {
-        ...uppercaseFormData,
-        dobProofUrl: dobRes.url,
-        dobProofName: dobRes.name,
-        categoryCertUrl: categoryRes.url || undefined,
-        categoryCertName: categoryRes.name || undefined,
-        disabilityCertUrl: disabilityRes.url || undefined,
-        disabilityCertName: disabilityRes.name || undefined,
-        ewsCertUrl: ewsRes.url || undefined,
-        ewsCertName: ewsRes.name || undefined,
+        ...(uppercaseFormData as Omit<StudentData, "dobProofUrl">),
+        dobProofUrl: "",
         submittedAt: new Date().toISOString(),
       };
 
-      // 3. Write to Database
       if (useMock) {
-        // Save to LocalStorage
-        const existing = localStorage.getItem("mock_students");
-        const list = existing ? JSON.parse(existing) : [];
-        const record = {
+        // 1. Upload files locally
+        setUploadProgress({ status: "Uploading supporting documents..." });
+
+        const dobRes = await uploadStudentDocument(files.dobProof!, "dob_proof", formData.studentName);
+
+        let categoryRes = { url: "", name: "" };
+        if (files.categoryCert) {
+          categoryRes = await uploadStudentDocument(files.categoryCert, "category_cert", formData.studentName);
+        }
+
+        let disabilityRes = { url: "", name: "" };
+        if (files.disabilityCert) {
+          disabilityRes = await uploadStudentDocument(files.disabilityCert, "disability_cert", formData.studentName);
+        }
+
+        let ewsRes = { url: "", name: "" };
+        if (files.ewsCert) {
+          ewsRes = await uploadStudentDocument(files.ewsCert, "ews_cert", formData.studentName);
+        }
+
+        let scholarshipFullProofRes = { url: "", name: "" };
+        if (files.scholarshipFullProof) {
+          scholarshipFullProofRes = await uploadStudentDocument(files.scholarshipFullProof, "scholarship_full_proof", formData.studentName);
+        }
+
+        let scholarshipPartialProofRes = { url: "", name: "" };
+        if (files.scholarshipPartialProof) {
+          scholarshipPartialProofRes = await uploadStudentDocument(files.scholarshipPartialProof, "scholarship_partial_proof", formData.studentName);
+        }
+
+        const localRecord: StudentData = {
           ...finalStudentData,
-          id: "MOCK-" + Math.floor(Math.random() * 900000 + 100000),
+          dobProofUrl: dobRes.url,
+          dobProofName: dobRes.name,
+          categoryCertUrl: categoryRes.url || undefined,
+          categoryCertName: categoryRes.name || undefined,
+          disabilityCertUrl: disabilityRes.url || undefined,
+          disabilityCertName: disabilityRes.name || undefined,
+          ewsCertUrl: ewsRes.url || undefined,
+          ewsCertName: ewsRes.name || undefined,
+          scholarshipFullProofUrl: scholarshipFullProofRes.url || undefined,
+          scholarshipFullProofName: scholarshipFullProofRes.name || undefined,
+          scholarshipPartialProofUrl: scholarshipPartialProofRes.url || undefined,
+          scholarshipPartialProofName: scholarshipPartialProofRes.name || undefined,
         };
-        list.push(record);
-        localStorage.setItem("mock_students", JSON.stringify(list));
+
+        setUploadProgress({ status: "Saving student record to database..." });
+        const record = await createStudent(localRecord);
         setCreatedRecord(record);
       } else {
-        // Save to Firebase Firestore
-        const docRef = await addDoc(collection(db, "students"), finalStudentData);
-        setCreatedRecord({
-          ...finalStudentData,
-          id: docRef.id,
+        setUploadProgress({ status: "Uploading files and saving to Supabase..." });
+
+        const payload = new FormData();
+        payload.append("student", JSON.stringify(finalStudentData));
+
+        if (files.dobProof) payload.append("dobProof", files.dobProof);
+        if (files.categoryCert) payload.append("categoryCert", files.categoryCert);
+        if (files.disabilityCert) payload.append("disabilityCert", files.disabilityCert);
+        if (files.ewsCert) payload.append("ewsCert", files.ewsCert);
+        if (files.scholarshipFullProof) payload.append("scholarshipFullProof", files.scholarshipFullProof);
+        if (files.scholarshipPartialProof) payload.append("scholarshipPartialProof", files.scholarshipPartialProof);
+
+        const response = await fetch("/api/students", {
+          method: "POST",
+          body: payload,
         });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result?.error || "An error occurred during submission. Please try again.");
+        }
+
+        setCreatedRecord(result.student as StudentData);
       }
 
       setSubmitSuccess(true);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      setErrors({ form: err.message || "An error occurred during submission. Please try again." });
+      setErrors({
+        form: err instanceof Error ? err.message : "An error occurred during submission. Please try again.",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -412,7 +407,7 @@ export default function StudentForm() {
         <div className="max-w-4xl mx-auto mb-6 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-4 flex items-start md:items-center gap-3 text-amber-900 shadow-sm">
           <Database className="w-5 h-5 text-amber-600 shrink-0" />
           <div className="flex-1 text-sm">
-            <span className="font-bold">Running in Mock/Local Storage Mode:</span> Firebase environment keys are not configured. Submissions will be stored in your browser's local storage so you can fully test form validation, uploads, and PDF export instantly!
+            <span className="font-bold">Running in Mock/Local Storage Mode:</span> Supabase environment keys are not configured. Submissions will be stored in your browser&apos;s local storage so you can fully test form validation, uploads, and PDF export instantly!
           </div>
           <a
             href="/admin"
@@ -470,7 +465,7 @@ export default function StudentForm() {
                   setSubmitSuccess(false);
                   setCreatedRecord(null);
                   setCurrentStep(1);
-                  setFiles({ dobProof: null, categoryCert: null, disabilityCert: null, ewsCert: null });
+                  setFiles({ dobProof: null, categoryCert: null, disabilityCert: null, ewsCert: null, scholarshipFullProof: null, scholarshipPartialProof: null });
                   setFormData({
                     studentName: "",
                     gender: "",
@@ -982,7 +977,7 @@ export default function StudentForm() {
 
                   {/* Father's Qualification */}
                   <div>
-                    <label className="block text-slate-700 text-sm font-semibold mb-1.5">Father's Qualification *</label>
+                    <label className="block text-slate-700 text-sm font-semibold mb-1.5">Father&apos;s Qualification *</label>
                     <input
                       type="text"
                       name="fatherQualification"
@@ -996,7 +991,7 @@ export default function StudentForm() {
 
                   {/* Mother's Qualification */}
                   <div>
-                    <label className="block text-slate-700 text-sm font-semibold mb-1.5">Mother's Qualification *</label>
+                    <label className="block text-slate-700 text-sm font-semibold mb-1.5">Mother&apos;s Qualification *</label>
                     <input
                       type="text"
                       name="motherQualification"
@@ -1088,6 +1083,35 @@ export default function StudentForm() {
                       </>
                     )}
                   </div>
+
+                  {formData.scholarshipFullSource !== "None" && (
+                    <div className="border border-dashed border-slate-200 rounded-xl p-4 bg-white">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                        <div>
+                          <h4 className="font-semibold text-slate-800 text-xs">Full Reimbursement Proof *</h4>
+                          <p className="text-slate-400 text-[11px] mt-0.5">Upload the scholarship/sanction letter or fee reimbursement order (PDF/JPG, Max 5MB).</p>
+                        </div>
+                        <label className="bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 px-3 py-1.5 rounded-lg flex items-center justify-center gap-2 cursor-pointer transition shadow-sm text-xs font-semibold text-slate-700">
+                          <Upload className="w-3.5 h-3.5 text-slate-500" />
+                          Choose File
+                          <input
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png"
+                            onChange={(e) => handleFileChange(e, "scholarshipFullProof")}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                      {files.scholarshipFullProof && (
+                        <div className="mt-3 flex items-center gap-2 text-xs text-indigo-600 bg-indigo-50/50 border border-indigo-100 rounded-lg p-2.5">
+                          <CheckCircle className="w-4 h-4 text-indigo-500 shrink-0" />
+                          <span className="font-medium truncate">{files.scholarshipFullProof.name}</span>
+                          <span className="text-slate-400 shrink-0">({(files.scholarshipFullProof.size / (1024 * 1024)).toFixed(2)} MB)</span>
+                        </div>
+                      )}
+                      {errors.scholarshipFullProof && <span className="text-red-500 text-xs mt-1.5 block">{errors.scholarshipFullProof}</span>}
+                    </div>
+                  )}
                 </div>
 
                 {/* 2. Partial Tuition Fee Reimbursement */}
@@ -1143,6 +1167,35 @@ export default function StudentForm() {
                       </>
                     )}
                   </div>
+
+                  {formData.scholarshipPartialSource !== "None" && (
+                    <div className="border border-dashed border-slate-200 rounded-xl p-4 bg-white">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                        <div>
+                          <h4 className="font-semibold text-slate-800 text-xs">Partial Reimbursement Proof *</h4>
+                          <p className="text-slate-400 text-[11px] mt-0.5">Upload the scholarship/sanction letter or fee reimbursement order (PDF/JPG, Max 5MB).</p>
+                        </div>
+                        <label className="bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 px-3 py-1.5 rounded-lg flex items-center justify-center gap-2 cursor-pointer transition shadow-sm text-xs font-semibold text-slate-700">
+                          <Upload className="w-3.5 h-3.5 text-slate-500" />
+                          Choose File
+                          <input
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png"
+                            onChange={(e) => handleFileChange(e, "scholarshipPartialProof")}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                      {files.scholarshipPartialProof && (
+                        <div className="mt-3 flex items-center gap-2 text-xs text-indigo-600 bg-indigo-50/50 border border-indigo-100 rounded-lg p-2.5">
+                          <CheckCircle className="w-4 h-4 text-indigo-500 shrink-0" />
+                          <span className="font-medium truncate">{files.scholarshipPartialProof.name}</span>
+                          <span className="text-slate-400 shrink-0">({(files.scholarshipPartialProof.size / (1024 * 1024)).toFixed(2)} MB)</span>
+                        </div>
+                      )}
+                      {errors.scholarshipPartialProof && <span className="text-red-500 text-xs mt-1.5 block">{errors.scholarshipPartialProof}</span>}
+                    </div>
+                  )}
                 </div>
 
                 {/* 3. Conditional File Upload Zones */}
@@ -1302,11 +1355,11 @@ export default function StudentForm() {
                       <span className="text-slate-800 font-medium">Rs. {Number(formData.householdIncome).toLocaleString("en-IN")}</span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-slate-200/40">
-                      <span className="text-slate-400 font-semibold text-xs">Father's Qualification:</span>
+                      <span className="text-slate-400 font-semibold text-xs">Father&apos;s Qualification:</span>
                       <span className="text-slate-800 font-medium">{formData.fatherQualification}</span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-slate-200/40">
-                      <span className="text-slate-400 font-semibold text-xs">Mother's Qualification:</span>
+                      <span className="text-slate-400 font-semibold text-xs">Mother&apos;s Qualification:</span>
                       <span className="text-slate-800 font-medium">{formData.motherQualification}</span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-slate-200/40">
@@ -1338,6 +1391,18 @@ export default function StudentForm() {
                         <li className="flex items-center gap-2">
                           <Check className="w-3.5 h-3.5 text-emerald-500" />
                           EWS Certificate: <span className="text-slate-600 font-mono">{files.ewsCert.name}</span>
+                        </li>
+                      )}
+                      {files.scholarshipFullProof && (
+                        <li className="flex items-center gap-2">
+                          <Check className="w-3.5 h-3.5 text-emerald-500" />
+                          Full Reimbursement Proof: <span className="text-slate-600 font-mono">{files.scholarshipFullProof.name}</span>
+                        </li>
+                      )}
+                      {files.scholarshipPartialProof && (
+                        <li className="flex items-center gap-2">
+                          <Check className="w-3.5 h-3.5 text-emerald-500" />
+                          Partial Reimbursement Proof: <span className="text-slate-600 font-mono">{files.scholarshipPartialProof.name}</span>
                         </li>
                       )}
                     </ul>
