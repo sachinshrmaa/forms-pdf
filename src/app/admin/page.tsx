@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { type Session } from "@supabase/supabase-js";
-import { fetchStudents as loadStudentsFromSource, getMockDocument, supabase, useMock, StudentData } from "@/lib/supabase";
+import { fetchStudents as loadStudentsFromSource, deleteStudent as deleteStudentFromSource, getMockDocument, supabase, useMock, StudentData } from "@/lib/supabase";
 import { generateStudentPDF } from "@/lib/pdfGenerator";
 import {
   Search, Download, Eye, RefreshCw, Users, FileText, Award, MapPin, X, ArrowLeft, Database, Trash2, UserPlus, ExternalLink, LogIn, LogOut, Shield, Loader2
@@ -25,6 +25,8 @@ export default function AdminDashboard() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [careerFilter, setCareerFilter] = useState("");
   const [ewsFilter, setEwsFilter] = useState("");
+  const [programmeFilter, setProgrammeFilter] = useState("");
+  const [yearFilter, setYearFilter] = useState("");
 
   const authLoading = session === undefined;
 
@@ -113,8 +115,18 @@ export default function AdminDashboard() {
       result = result.filter((s) => s.ews === ewsFilter);
     }
 
+    // Programme Filter
+    if (programmeFilter) {
+      result = result.filter((s) => s.programmeName === programmeFilter);
+    }
+
+    // Study Year Filter
+    if (yearFilter) {
+      result = result.filter((s) => s.currentYear === yearFilter);
+    }
+
     return result;
-  }, [students, searchQuery, genderFilter, categoryFilter, careerFilter, ewsFilter]);
+  }, [students, searchQuery, genderFilter, categoryFilter, careerFilter, ewsFilter, programmeFilter, yearFilter]);
 
   const handleClearFilters = () => {
     setSearchQuery("");
@@ -122,6 +134,8 @@ export default function AdminDashboard() {
     setCategoryFilter("");
     setCareerFilter("");
     setEwsFilter("");
+    setProgrammeFilter("");
+    setYearFilter("");
   };
 
   const handleAdminLogin = async (event: React.FormEvent) => {
@@ -161,166 +175,7 @@ export default function AdminDashboard() {
   // Generate Mock Data for Testing
   const handleSeedMockData = () => {
     const mockStudents: StudentData[] = [
-      {
-        id: "MOCK-109283",
-        studentName: "AARAV SHARMA",
-        gender: "MALE",
-        abcId: "543-982-120-432",
-        enrollmentNo: "EN/2026/0042",
-        yearOfAdmission: "2026",
-        dob: "2005-04-12",
-        dobProofUrl: "dob_proof_mock1",
-        dobProofName: "aarav_birth_certificate.pdf",
-        programmeName: "BACHELOR IN TECHNOLOGY IN COMPUTER SCIENCE AND ENGINEER",
-        programmeCode: "BTECH-001",
-        specialization: "ARTIFICIAL INTELLIGENCE & MACHINE LEARNING",
-        careerType: "UG",
-        programmeDuration: "4",
-        currentYear: "I",
-        lateralEntry: "NO",
-        department: "COMPUTER SCIENCE AND ENGINEERING",
-        school: "COMPUTER SCIENCE AND ENGINEERING",
-        differentlyAbled: "NO",
-        socialCategory: "GENERAL",
-        religion: "HINDUISM",
-        ews: "NO",
-        householdIncome: 450000,
-        state: "UTTAR PRADESH",
-        country: "INDIA",
-        scholarshipFullSource: "NONE",
-        scholarshipFullName: "",
-        scholarshipFullAmount: 0,
-        scholarshipPartialSource: "GOVERNMENT",
-        scholarshipPartialName: "STATE MERIT SCHOLARSHIP",
-        scholarshipPartialAmount: 25000,
-        finalYearStatus: "COURSE ONGOING",
-        fatherQualification: "GRADUATE",
-        motherQualification: "HIGH SCHOOL",
-        firstGraduation: "NO",
-        submittedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-      },
-      {
-        id: "MOCK-882713",
-        studentName: "PRIYANJALI SEN",
-        gender: "FEMALE",
-        abcId: "891-230-581-992",
-        enrollmentNo: "EN/2026/0187",
-        yearOfAdmission: "2026",
-        dob: "2003-09-24",
-        dobProofUrl: "dob_proof_mock2",
-        dobProofName: "priya_passport_copy.jpg",
-        programmeName: "MASTER IN COMPUTER APPLICATIONS",
-        programmeCode: "MCA-001",
-        specialization: "CYBERSECURITY",
-        careerType: "PG",
-        programmeDuration: "2",
-        currentYear: "I",
-        lateralEntry: "NO",
-        department: "COMPUTER SCIENCE AND ENGINEERING",
-        school: "COMPUTER SCIENCE AND ENGINEERING",
-        differentlyAbled: "YES",
-        disabilityCertUrl: "disability_cert_mock2",
-        disabilityCertName: "priya_disability_udid.pdf",
-        socialCategory: "OBC",
-        categoryCertUrl: "category_cert_mock2",
-        categoryCertName: "priya_obc_ncl.pdf",
-        religion: "HINDUISM",
-        ews: "NO",
-        householdIncome: 180000,
-        state: "WEST BENGAL",
-        country: "INDIA",
-        scholarshipFullSource: "INSTITUTION",
-        scholarshipFullName: "DEAN'S EXCELLENCE SCHOLARSHIP",
-        scholarshipFullAmount: 90000,
-        scholarshipPartialSource: "NONE",
-        scholarshipPartialName: "",
-        scholarshipPartialAmount: 0,
-        finalYearStatus: "COURSE ONGOING",
-        fatherQualification: "POST GRADUATE",
-        motherQualification: "GRADUATE",
-        firstGraduation: "YES - SELF",
-        submittedAt: new Date(Date.now() - 3600000 * 24).toISOString(),
-      },
-      {
-        id: "MOCK-447192",
-        studentName: "MOHAMMED YASEEN",
-        gender: "MALE",
-        abcId: "128-442-990-210",
-        enrollmentNo: "EN/2026/0091",
-        yearOfAdmission: "2026",
-        dob: "2004-11-05",
-        dobProofUrl: "dob_proof_mock3",
-        dobProofName: "yaseen_10th_marksheet.pdf",
-        programmeName: "BACHELOR IN COMPUTER APPLICATIONS",
-        programmeCode: "BCA-001",
-        specialization: "SOFTWARE DEVELOPMENT",
-        careerType: "UG",
-        programmeDuration: "3",
-        currentYear: "III",
-        lateralEntry: "NO",
-        department: "COMPUTER SCIENCE AND ENGINEERING",
-        school: "COMPUTER SCIENCE AND ENGINEERING",
-        differentlyAbled: "NO",
-        socialCategory: "GENERAL",
-        religion: "ISLAM",
-        ews: "YES",
-        ewsCertUrl: "ews_cert_mock3",
-        ewsCertName: "yaseen_ews_25-26.pdf",
-        householdIncome: 95000,
-        state: "KERALA",
-        country: "INDIA",
-        scholarshipFullSource: "GOVERNMENT",
-        scholarshipFullName: "NATIONAL MEANS-CUM-MERIT SCHEME",
-        scholarshipFullAmount: 60000,
-        scholarshipPartialSource: "NONE",
-        scholarshipPartialName: "",
-        scholarshipPartialAmount: 0,
-        finalYearStatus: "PASS",
-        fatherQualification: "DIPLOMA",
-        motherQualification: "HIGH SCHOOL",
-        firstGraduation: "NO",
-        submittedAt: new Date(Date.now() - 3600000 * 48).toISOString(),
-      },
-      {
-        id: "MOCK-771829",
-        studentName: "SUNITA GOND",
-        gender: "FEMALE",
-        abcId: "772-911-300-449",
-        enrollmentNo: "EN/2026/0204",
-        yearOfAdmission: "2026",
-        dob: "2005-02-18",
-        dobProofUrl: "dob_proof_mock4",
-        dobProofName: "sunita_birth_cert.jpg",
-        programmeName: "DIPLOMA IN COMPUTER SCIENCE AND ENGINEERING",
-        programmeCode: "DIP-CSE-01",
-        specialization: "GENERAL COMPUTER SCIENCE AND ENGINEERING",
-        careerType: "DIPLOMA",
-        programmeDuration: "3",
-        currentYear: "I",
-        lateralEntry: "NO",
-        department: "COMPUTER SCIENCE AND ENGINEERING",
-        school: "COMPUTER SCIENCE AND ENGINEERING",
-        differentlyAbled: "NO",
-        socialCategory: "ST",
-        categoryCertUrl: "category_cert_mock4",
-        categoryCertName: "sunita_st_certificate.pdf",
-        religion: "CHRISTIANITY",
-        ews: "NO",
-        householdIncome: 120000,
-        state: "JHARKHAND",
-        country: "INDIA",
-        scholarshipFullSource: "GOVERNMENT",
-        scholarshipFullName: "POST MATRIC SCHOLARSHIP FOR ST",
-        scholarshipFullAmount: 75000,
-        scholarshipPartialSource: "NONE",
-        scholarshipPartialName: "",
-        scholarshipPartialAmount: 0,
-        finalYearStatus: "COURSE ONGOING",
-        fatherQualification: "HIGH SCHOOL",
-        motherQualification: "PRIMARY EDUCATION",
-        firstGraduation: "YES - SELF",
-        submittedAt: new Date(Date.now() - 3600000 * 72).toISOString(),
-      }
+    
     ];
 
     localStorage.setItem("mock_students", JSON.stringify(mockStudents));
@@ -331,6 +186,24 @@ export default function AdminDashboard() {
     if (confirm("Are you sure you want to delete all local entries?")) {
       localStorage.removeItem("mock_students");
       void refreshStudents();
+    }
+  };
+
+  const handleDeleteStudent = async (id?: string) => {
+    if (!id) return;
+    if (!confirm("Are you sure you want to delete this student record? This action cannot be undone.")) {
+      return;
+    }
+
+    try {
+      await deleteStudentFromSource(id);
+      setStudents((prev) => prev.filter((s) => s.id !== id));
+      if (selectedStudent?.id === id) {
+        setSelectedStudent(null);
+      }
+    } catch (error) {
+      console.error("Error deleting student:", error);
+      alert("Failed to delete student record. Please try again.");
     }
   };
 
@@ -642,7 +515,7 @@ export default function AdminDashboard() {
                 <option value="PhD">PhD</option>
               </select>
 
-              {/* EWS Filter */}
+               {/* EWS Filter */}
               <select
                 value={ewsFilter}
                 onChange={(e) => setEwsFilter(e.target.value)}
@@ -653,8 +526,35 @@ export default function AdminDashboard() {
                 <option value="No">EWS No</option>
               </select>
 
+              {/* Programme Filter */}
+              <select
+                value={programmeFilter}
+                onChange={(e) => setProgrammeFilter(e.target.value)}
+                className="bg-white border border-slate-200 text-xs px-3 py-2 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-50 text-slate-700 font-semibold"
+              >
+                <option value="">All Programmes</option>
+                <option value="BACHELOR IN COMPUTER APPLICATIONS">BCA</option>
+                <option value="BACHELOR IN TECHNOLOGY IN COMPUTER SCIENCE AND ENGINEER">B.Tech CSE</option>
+                <option value="DIPLOMA IN COMPUTER SCIENCE AND ENGINEERING">Diploma CSE</option>
+                <option value="MASTER IN COMPUTER APPLICATIONS">MCA</option>
+              </select>
+
+              {/* Study Year Filter */}
+              <select
+                value={yearFilter}
+                onChange={(e) => setYearFilter(e.target.value)}
+                className="bg-white border border-slate-200 text-xs px-3 py-2 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-50 text-slate-700 font-semibold"
+              >
+                <option value="">All Years</option>
+                <option value="I">I Year</option>
+                <option value="II">II Year</option>
+                <option value="III">III Year</option>
+                <option value="IV">IV Year</option>
+                <option value="V">V Year</option>
+              </select>
+
               {/* Reset */}
-              {(searchQuery || genderFilter || categoryFilter || careerFilter || ewsFilter) && (
+              {(searchQuery || genderFilter || categoryFilter || careerFilter || ewsFilter || programmeFilter || yearFilter) && (
                 <button
                   onClick={handleClearFilters}
                   className="text-xs text-rose-600 hover:text-rose-700 font-bold flex items-center gap-1.5 transition ml-auto lg:ml-0"
@@ -741,6 +641,14 @@ export default function AdminDashboard() {
                           >
                             <Download className="w-3.5 h-3.5" />
                             PDF
+                          </button>
+
+                          <button
+                            onClick={() => handleDeleteStudent(student.id)}
+                            className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-all shadow-sm"
+                            title="Delete student record"
+                          >
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </td>
@@ -941,6 +849,14 @@ export default function AdminDashboard() {
             <div className="bg-slate-50 px-6 py-4 flex justify-between items-center border-t border-slate-100">
               <span className="text-slate-400 text-xs">Submitted: {new Date(selectedStudent.submittedAt).toLocaleString()}</span>
               <div className="flex gap-2">
+                <button
+                  onClick={() => handleDeleteStudent(selectedStudent.id)}
+                  className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-semibold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 transition"
+                  title="Delete student record"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </button>
                 <button
                   onClick={() => setSelectedStudent(null)}
                   className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold px-4 py-2 rounded-xl text-xs transition"

@@ -348,3 +348,23 @@ export const getMockDocument = (documentId: string): MockFileEntry | undefined =
   const typedWindow = window as Window & { [mockFileCacheKey]?: MockFileCache };
   return typedWindow[mockFileCacheKey]?.[documentId];
 };
+
+export const deleteStudent = async (id: string): Promise<void> => {
+  if (!id) return;
+  if (useMock || !supabase) {
+    const existing = readMockStudents();
+    const updated = existing.filter((student) => student.id !== id);
+    writeMockStudents(updated);
+    return;
+  }
+
+  const { error } = await supabase
+    .from("students")
+    .delete()
+    .eq("id", id);
+
+  if (error) {
+    throw error;
+  }
+};
+
