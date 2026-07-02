@@ -210,6 +210,12 @@ export default function AdminDashboard() {
       { key: "state", label: "State" },
       { key: "country", label: "Country" },
       { key: "finalYearStatus", label: "Final Year Status" },
+      { key: "scholarshipFullSource", label: "Scholarship (Full) Source" },
+      { key: "scholarshipFullName", label: "Scholarship (Full) Name" },
+      { key: "scholarshipFullAmount", label: "Scholarship (Full) Amount" },
+      { key: "scholarshipPartialSource", label: "Scholarship (Partial) Source" },
+      { key: "scholarshipPartialName", label: "Scholarship (Partial) Name" },
+      { key: "scholarshipPartialAmount", label: "Scholarship (Partial) Amount" },
       { key: "submittedAt", label: "Submitted At" },
     ];
 
