@@ -349,6 +349,34 @@ export const getMockDocument = (documentId: string): MockFileEntry | undefined =
   return typedWindow[mockFileCacheKey]?.[documentId];
 };
 
+export const updateStudent = async (student: StudentData): Promise<StudentData> => {
+  if (!student.id) {
+    throw new Error("Cannot update a student record without an id");
+  }
+
+  if (useMock || !supabase) {
+    const existing = readMockStudents();
+    const updated = existing.map((s) => (s.id === student.id ? student : s));
+    writeMockStudents(updated);
+    return student;
+  }
+
+  const { id, ...row } = toStudentRow(student);
+
+  const { data, error } = await supabase
+    .from("students")
+    .update(row)
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return toStudentData(data as StudentRow);
+};
+
 export const deleteStudent = async (id: string): Promise<void> => {
   if (!id) return;
   if (useMock || !supabase) {

@@ -3,16 +3,80 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { type Session } from "@supabase/supabase-js";
-import { fetchStudents as loadStudentsFromSource, deleteStudent as deleteStudentFromSource, getMockDocument, supabase, useMock, StudentData } from "@/lib/supabase";
+import { fetchStudents as loadStudentsFromSource, deleteStudent as deleteStudentFromSource, updateStudent as updateStudentInSource, getMockDocument, supabase, useMock, StudentData } from "@/lib/supabase";
 import { generateStudentPDF } from "@/lib/pdfGenerator";
 import {
-  Search, Download, Eye, RefreshCw, Users, FileText, Award, MapPin, X, ArrowLeft, Database, Trash2, UserPlus, ExternalLink, LogIn, LogOut, Shield, Loader2, ChevronDown, FileDown
+  Search, Download, Eye, RefreshCw, Users, FileText, Award, MapPin, X, ArrowLeft, Database, Trash2, UserPlus, ExternalLink, LogIn, LogOut, Shield, Loader2, ChevronDown, FileDown, Pencil, Save
 } from "lucide-react";
+
+function EditInput({
+  label,
+  name,
+  value,
+  onChange,
+  type = "text",
+}: {
+  label: string;
+  name: string;
+  value: string | number;
+  onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
+  type?: string;
+}) {
+  return (
+    <div>
+      <label className="block text-slate-500 font-semibold text-[11px] uppercase tracking-wide mb-1">{label}</label>
+      <input
+        type={type}
+        name={name}
+        value={value}
+        onChange={onChange}
+        className="w-full bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition"
+      />
+    </div>
+  );
+}
+
+function EditSelect({
+  label,
+  name,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  name: string;
+  value: string;
+  onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
+  options: string[] | { value: string; label: string }[];
+}) {
+  return (
+    <div>
+      <label className="block text-slate-500 font-semibold text-[11px] uppercase tracking-wide mb-1">{label}</label>
+      <select
+        name={name}
+        value={value}
+        onChange={onChange}
+        className="w-full bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-slate-800 text-xs focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition"
+      >
+        {options.map((opt) =>
+          typeof opt === "string" ? (
+            <option key={opt} value={opt}>{opt}</option>
+          ) : (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          )
+        )}
+      </select>
+    </div>
+  );
+}
 
 export default function AdminDashboard() {
   const [students, setStudents] = useState<StudentData[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedStudent, setSelectedStudent] = useState<StudentData | null>(null);
+  const [editingStudent, setEditingStudent] = useState<StudentData | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editError, setEditError] = useState("");
   const [session, setSession] = useState<Session | null | undefined>(useMock || !supabase ? null : undefined);
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [authEmail, setAuthEmail] = useState("");
@@ -304,6 +368,45 @@ export default function AdminDashboard() {
     } catch (error) {
       console.error("Error deleting student:", error);
       alert("Failed to delete student record. Please try again.");
+    }
+  };
+
+  const handleOpenEdit = (student: StudentData) => {
+    setEditError("");
+    setEditingStudent({ ...student });
+  };
+
+  const handleEditFieldChange = (
+    event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
+    const { name, value, type } = event.target;
+    setEditingStudent((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        [name]: type === "number" ? Number(value) : value,
+      };
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingStudent) return;
+
+    setIsSavingEdit(true);
+    setEditError("");
+
+    try {
+      const updated = await updateStudentInSource(editingStudent);
+      setStudents((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+      if (selectedStudent?.id === updated.id) {
+        setSelectedStudent(updated);
+      }
+      setEditingStudent(null);
+    } catch (error) {
+      console.error("Error updating student:", error);
+      setEditError("Failed to save changes. Please try again.");
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -787,6 +890,14 @@ export default function AdminDashboard() {
                           </button>
 
                           <button
+                            onClick={() => handleOpenEdit(student)}
+                            className="p-2 bg-amber-50 hover:bg-amber-100 text-amber-600 rounded-xl transition-all shadow-sm"
+                            title="Edit student record"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+
+                          <button
                             onClick={() => handleDeleteStudent(student.id)}
                             className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-all shadow-sm"
                             title="Delete student record"
@@ -1007,6 +1118,13 @@ export default function AdminDashboard() {
                   Close Detail
                 </button>
                 <button
+                  onClick={() => handleOpenEdit(selectedStudent)}
+                  className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-semibold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 transition"
+                >
+                  <Pencil className="w-4 h-4" />
+                  Edit
+                </button>
+                <button
                   onClick={() => generateStudentPDF(selectedStudent)}
                   className="bg-slate-900 hover:bg-slate-800 text-white font-semibold px-5 py-2 rounded-xl text-xs flex items-center gap-1.5 transition shadow-md shadow-slate-200"
                 >
@@ -1014,6 +1132,147 @@ export default function AdminDashboard() {
                   Download Verification PDF
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT MODAL */}
+      {editingStudent && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-slate-100 w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl relative animate-in fade-in zoom-in-95 duration-200">
+
+            {/* Modal Header */}
+            <div className="bg-slate-900 text-white px-6 py-5 flex justify-between items-center">
+              <div>
+                <span className="text-[10px] bg-amber-500 font-bold px-2 py-0.5 rounded-md uppercase tracking-wider">Edit Mode</span>
+                <h2 className="text-xl font-bold mt-1">{editingStudent.studentName || "Edit Student"}</h2>
+              </div>
+              <button
+                onClick={() => { setEditingStudent(null); setEditError(""); }}
+                className="p-1.5 hover:bg-slate-800 rounded-xl transition-all text-slate-350"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1 text-sm">
+              {editError && (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {editError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+                {/* 1. Identity */}
+                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-3">
+                  <h3 className="font-bold text-slate-800 border-b pb-1.5 text-xs uppercase tracking-wider text-slate-400">1. Identity Profile</h3>
+                  <div className="space-y-2.5">
+                    <EditInput label="Full Name" name="studentName" value={editingStudent.studentName} onChange={handleEditFieldChange} />
+                    <EditSelect label="Gender" name="gender" value={editingStudent.gender} onChange={handleEditFieldChange} options={["Male", "Female", "Other"]} />
+                    <EditInput label="Date of Birth" name="dob" type="date" value={editingStudent.dob} onChange={handleEditFieldChange} />
+                    <EditInput label="Enrollment Number" name="enrollmentNo" value={editingStudent.enrollmentNo} onChange={handleEditFieldChange} />
+                    <EditInput label="Academic Bank (ABC ID)" name="abcId" value={editingStudent.abcId} onChange={handleEditFieldChange} />
+                    <EditInput label="Year of Admission" name="yearOfAdmission" value={editingStudent.yearOfAdmission} onChange={handleEditFieldChange} />
+                  </div>
+                </div>
+
+                {/* 2. Program */}
+                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-3">
+                  <h3 className="font-bold text-slate-800 border-b pb-1.5 text-xs uppercase tracking-wider text-slate-400">2. Academic Course</h3>
+                  <div className="space-y-2.5">
+                    <EditInput label="Programme Code" name="programmeCode" value={editingStudent.programmeCode} onChange={handleEditFieldChange} />
+                    <EditInput label="Programme Name" name="programmeName" value={editingStudent.programmeName} onChange={handleEditFieldChange} />
+                    <EditInput label="Specialization" name="specialization" value={editingStudent.specialization} onChange={handleEditFieldChange} />
+                    <EditSelect label="Career Type" name="careerType" value={editingStudent.careerType} onChange={handleEditFieldChange} options={["UG", "PG", "Integrated", "Diploma", "Certificate", "PhD"]} />
+                    <EditSelect label="Programme Duration (Yrs)" name="programmeDuration" value={editingStudent.programmeDuration} onChange={handleEditFieldChange} options={["1", "2", "3", "4", "5"]} />
+                    <EditSelect label="Current Year" name="currentYear" value={editingStudent.currentYear} onChange={handleEditFieldChange} options={["I", "II", "III", "IV", "V"]} />
+                    <EditSelect label="Lateral Entry" name="lateralEntry" value={editingStudent.lateralEntry} onChange={handleEditFieldChange} options={["Yes", "No"]} />
+                    <EditInput label="Department" name="department" value={editingStudent.department} onChange={handleEditFieldChange} />
+                    <EditInput label="School" name="school" value={editingStudent.school} onChange={handleEditFieldChange} />
+                  </div>
+                </div>
+
+                {/* 3. Socio-Economics */}
+                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-3">
+                  <h3 className="font-bold text-slate-800 border-b pb-1.5 text-xs uppercase tracking-wider text-slate-400">3. Socio-Demographics</h3>
+                  <div className="space-y-2.5">
+                    <EditSelect label="Social Category" name="socialCategory" value={editingStudent.socialCategory} onChange={handleEditFieldChange} options={["General", "OBC", "SC", "ST"]} />
+                    <EditInput label="Religion" name="religion" value={editingStudent.religion} onChange={handleEditFieldChange} />
+                    <EditSelect label="EWS Status" name="ews" value={editingStudent.ews} onChange={handleEditFieldChange} options={["Yes", "No"]} />
+                    <EditInput label="Annual Household Income" name="householdIncome" type="number" value={editingStudent.householdIncome} onChange={handleEditFieldChange} />
+                    <EditSelect label="Differently Abled" name="differentlyAbled" value={editingStudent.differentlyAbled} onChange={handleEditFieldChange} options={["Yes", "No"]} />
+                    <EditInput label="State" name="state" value={editingStudent.state} onChange={handleEditFieldChange} />
+                    <EditInput label="Country" name="country" value={editingStudent.country} onChange={handleEditFieldChange} />
+                    <EditSelect label="Final Year Status" name="finalYearStatus" value={editingStudent.finalYearStatus} onChange={handleEditFieldChange} options={["Course Ongoing", "Pass", "Fail"]} />
+                    <EditInput label="Father's Qualification" name="fatherQualification" value={editingStudent.fatherQualification} onChange={handleEditFieldChange} />
+                    <EditInput label="Mother's Qualification" name="motherQualification" value={editingStudent.motherQualification} onChange={handleEditFieldChange} />
+                    <EditSelect
+                      label="First Graduate Status"
+                      name="firstGraduation"
+                      value={editingStudent.firstGraduation}
+                      onChange={handleEditFieldChange}
+                      options={[
+                        { value: "No", label: "No" },
+                        { value: "Yes - Self", label: "Yes - Self" },
+                        { value: "Yes - Sibling", label: "Yes - Sibling" },
+                      ]}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Scholarships */}
+              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-4">
+                <h3 className="font-bold text-slate-800 border-b pb-1.5 text-xs uppercase tracking-wider text-slate-400">4. Tuition Fee Reimbursements</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+                  <div className="space-y-2.5">
+                    <h4 className="font-bold text-indigo-650 text-xs mb-1.5">Full Fee Scholarship Details</h4>
+                    <EditSelect
+                      label="Source"
+                      name="scholarshipFullSource"
+                      value={editingStudent.scholarshipFullSource}
+                      onChange={handleEditFieldChange}
+                      options={["None", "Government", "Private organization", "Philanthropist", "Institution"]}
+                    />
+                    <EditInput label="Scholarship Name" name="scholarshipFullName" value={editingStudent.scholarshipFullName} onChange={handleEditFieldChange} />
+                    <EditInput label="Annual Amount" name="scholarshipFullAmount" type="number" value={editingStudent.scholarshipFullAmount} onChange={handleEditFieldChange} />
+                  </div>
+                  <div className="space-y-2.5">
+                    <h4 className="font-bold text-indigo-650 text-xs mb-1.5">Partial Fee Scholarship Details</h4>
+                    <EditSelect
+                      label="Source"
+                      name="scholarshipPartialSource"
+                      value={editingStudent.scholarshipPartialSource}
+                      onChange={handleEditFieldChange}
+                      options={["None", "Government", "Private organization", "Philanthropist", "Institution"]}
+                    />
+                    <EditInput label="Scholarship Name" name="scholarshipPartialName" value={editingStudent.scholarshipPartialName} onChange={handleEditFieldChange} />
+                    <EditInput label="Annual Amount" name="scholarshipPartialAmount" type="number" value={editingStudent.scholarshipPartialAmount} onChange={handleEditFieldChange} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-slate-50 px-6 py-4 flex justify-end items-center border-t border-slate-100 gap-2">
+              <button
+                onClick={() => { setEditingStudent(null); setEditError(""); }}
+                disabled={isSavingEdit}
+                className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold px-4 py-2 rounded-xl text-xs transition disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void handleSaveEdit()}
+                disabled={isSavingEdit}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-5 py-2 rounded-xl text-xs flex items-center gap-1.5 transition shadow-md shadow-indigo-200 disabled:opacity-60"
+              >
+                {isSavingEdit ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Save Changes
+              </button>
             </div>
           </div>
         </div>
