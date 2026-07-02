@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { type Session } from "@supabase/supabase-js";
 import { fetchStudents as loadStudentsFromSource, deleteStudent as deleteStudentFromSource, getMockDocument, supabase, useMock, StudentData } from "@/lib/supabase";
 import { generateStudentPDF } from "@/lib/pdfGenerator";
 import {
-  Search, Download, Eye, RefreshCw, Users, FileText, Award, MapPin, X, ArrowLeft, Database, Trash2, UserPlus, ExternalLink, LogIn, LogOut, Shield, Loader2
+  Search, Download, Eye, RefreshCw, Users, FileText, Award, MapPin, X, ArrowLeft, Database, Trash2, UserPlus, ExternalLink, LogIn, LogOut, Shield, Loader2, ChevronDown, FileDown
 } from "lucide-react";
 
 export default function AdminDashboard() {
@@ -25,10 +25,25 @@ export default function AdminDashboard() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [careerFilter, setCareerFilter] = useState("");
   const [ewsFilter, setEwsFilter] = useState("");
-  const [programmeFilter, setProgrammeFilter] = useState("");
+  const [programmeFilter, setProgrammeFilter] = useState<string[]>([]);
+  const [programmeDropdownOpen, setProgrammeDropdownOpen] = useState(false);
   const [yearFilter, setYearFilter] = useState("");
+  const programmeDropdownRef = useRef<HTMLDivElement>(null);
 
   const authLoading = session === undefined;
+
+  useEffect(() => {
+    if (!programmeDropdownOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (programmeDropdownRef.current && !programmeDropdownRef.current.contains(event.target as Node)) {
+        setProgrammeDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [programmeDropdownOpen]);
 
   const refreshStudents = async () => {
     setLoading(true);
@@ -116,8 +131,9 @@ export default function AdminDashboard() {
     }
 
     // Programme Filter
-    if (programmeFilter) {
-      result = result.filter((s) => s.programmeName === programmeFilter);
+    if (programmeFilter.length > 0) {
+      const selected = new Set(programmeFilter.map((p) => p.trim().toLowerCase()));
+      result = result.filter((s) => selected.has(s.programmeName?.trim().toLowerCase() ?? ""));
     }
 
     // Study Year Filter
@@ -128,14 +144,90 @@ export default function AdminDashboard() {
     return result;
   }, [students, searchQuery, genderFilter, categoryFilter, careerFilter, ewsFilter, programmeFilter, yearFilter]);
 
+  const programmeOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+
+    students.forEach((s) => {
+      const name = s.programmeName?.trim();
+      if (!name) return;
+      const key = name.toLowerCase();
+      if (!seen.has(key)) {
+        seen.set(key, name);
+      }
+    });
+
+    return Array.from(seen.values()).sort((a, b) => a.localeCompare(b));
+  }, [students]);
+
   const handleClearFilters = () => {
     setSearchQuery("");
     setGenderFilter("");
     setCategoryFilter("");
     setCareerFilter("");
     setEwsFilter("");
-    setProgrammeFilter("");
+    setProgrammeFilter([]);
     setYearFilter("");
+  };
+
+  const toggleProgrammeFilter = (name: string) => {
+    setProgrammeFilter((prev) =>
+      prev.includes(name) ? prev.filter((p) => p !== name) : [...prev, name]
+    );
+  };
+
+  const escapeCsvField = (value: unknown): string => {
+    const str = value === null || value === undefined ? "" : String(value);
+    if (/[",\n]/.test(str)) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
+  const handleExportCSV = () => {
+    if (filteredStudents.length === 0) return;
+
+    const columns: { key: keyof StudentData; label: string }[] = [
+      { key: "studentName", label: "Student Name" },
+      { key: "gender", label: "Gender" },
+      { key: "abcId", label: "ABC ID" },
+      { key: "enrollmentNo", label: "Enrollment No." },
+      { key: "yearOfAdmission", label: "Year of Admission" },
+      { key: "dob", label: "DOB" },
+      { key: "programmeName", label: "Programme Name" },
+      { key: "programmeCode", label: "Programme Code" },
+      { key: "specialization", label: "Specialization" },
+      { key: "careerType", label: "Career Type" },
+      { key: "programmeDuration", label: "Programme Duration" },
+      { key: "currentYear", label: "Current Year" },
+      { key: "lateralEntry", label: "Lateral Entry" },
+      { key: "department", label: "Department" },
+      { key: "school", label: "School" },
+      { key: "differentlyAbled", label: "Differently Abled" },
+      { key: "socialCategory", label: "Social Category" },
+      { key: "religion", label: "Religion" },
+      { key: "ews", label: "EWS" },
+      { key: "householdIncome", label: "Household Income" },
+      { key: "state", label: "State" },
+      { key: "country", label: "Country" },
+      { key: "finalYearStatus", label: "Final Year Status" },
+      { key: "submittedAt", label: "Submitted At" },
+    ];
+
+    const header = columns.map((c) => escapeCsvField(c.label)).join(",");
+    const rows = filteredStudents.map((student) =>
+      columns.map((c) => escapeCsvField(student[c.key])).join(",")
+    );
+    const csvContent = [header, ...rows].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `students_export_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const handleAdminLogin = async (event: React.FormEvent) => {
@@ -526,18 +618,51 @@ export default function AdminDashboard() {
                 <option value="No">EWS No</option>
               </select>
 
-              {/* Programme Filter */}
-              <select
-                value={programmeFilter}
-                onChange={(e) => setProgrammeFilter(e.target.value)}
-                className="bg-white border border-slate-200 text-xs px-3 py-2 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-50 text-slate-700 font-semibold"
-              >
-                <option value="">All Programmes</option>
-                <option value="BACHELOR IN COMPUTER APPLICATIONS">BCA</option>
-                <option value="BACHELOR IN TECHNOLOGY IN COMPUTER SCIENCE AND ENGINEER">B.Tech CSE</option>
-                <option value="DIPLOMA IN COMPUTER SCIENCE AND ENGINEERING">Diploma CSE</option>
-                <option value="MASTER IN COMPUTER APPLICATIONS">MCA</option>
-              </select>
+              {/* Programme Filter (multi-select) */}
+              <div className="relative" ref={programmeDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setProgrammeDropdownOpen((prev) => !prev)}
+                  className="bg-white border border-slate-200 text-xs px-3 py-2 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-50 text-slate-700 font-semibold flex items-center gap-1.5"
+                >
+                  {programmeFilter.length === 0
+                    ? "All Programmes"
+                    : `${programmeFilter.length} Programme${programmeFilter.length > 1 ? "s" : ""} Selected`}
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+
+                {programmeDropdownOpen && (
+                  <div className="absolute z-10 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-lg py-2 max-h-72 overflow-y-auto">
+                    {programmeOptions.length === 0 ? (
+                      <div className="px-4 py-2 text-xs text-slate-400">No programmes available</div>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setProgrammeFilter([])}
+                          className="w-full text-left px-4 py-1.5 text-xs font-bold text-indigo-600 hover:bg-indigo-50"
+                        >
+                          Clear Selection
+                        </button>
+                        {programmeOptions.map((name) => (
+                          <label
+                            key={name}
+                            className="flex items-center gap-2 px-4 py-1.5 text-xs text-slate-700 font-semibold hover:bg-slate-50 cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={programmeFilter.includes(name)}
+                              onChange={() => toggleProgrammeFilter(name)}
+                              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            {name}
+                          </label>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* Study Year Filter */}
               <select
@@ -553,11 +678,21 @@ export default function AdminDashboard() {
                 <option value="V">V Year</option>
               </select>
 
+              {/* Export CSV */}
+              <button
+                onClick={handleExportCSV}
+                disabled={filteredStudents.length === 0}
+                className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold px-3 py-2 rounded-xl flex items-center gap-1.5 transition ml-auto lg:ml-0 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <FileDown className="w-3.5 h-3.5" />
+                Export CSV
+              </button>
+
               {/* Reset */}
-              {(searchQuery || genderFilter || categoryFilter || careerFilter || ewsFilter || programmeFilter || yearFilter) && (
+              {(searchQuery || genderFilter || categoryFilter || careerFilter || ewsFilter || programmeFilter.length > 0 || yearFilter) && (
                 <button
                   onClick={handleClearFilters}
-                  className="text-xs text-rose-600 hover:text-rose-700 font-bold flex items-center gap-1.5 transition ml-auto lg:ml-0"
+                  className="text-xs text-rose-600 hover:text-rose-700 font-bold flex items-center gap-1.5 transition"
                 >
                   <X className="w-3.5 h-3.5" />
                   Clear Filters
