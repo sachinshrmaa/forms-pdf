@@ -210,6 +210,8 @@ export default function AdminDashboard() {
       { key: "state", label: "State" },
       { key: "country", label: "Country" },
       { key: "finalYearStatus", label: "Final Year Status" },
+      { key: "fatherQualification", label: "Father's Qualification" },
+      { key: "motherQualification", label: "Mother's Qualification" },
       { key: "scholarshipFullSource", label: "Scholarship (Full) Source" },
       { key: "scholarshipFullName", label: "Scholarship (Full) Name" },
       { key: "scholarshipFullAmount", label: "Scholarship (Full) Amount" },
